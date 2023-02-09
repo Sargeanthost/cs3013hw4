@@ -1,0 +1,5 @@
+/*
+!.gitignore
+!goatmalloc.c
+!goatmalloc.h
+!CMakeLists.txt
