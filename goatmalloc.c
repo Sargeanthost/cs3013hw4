@@ -3,53 +3,77 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <assert.h>
 #include "goatmalloc.h"
 
 #define PAGE_SIZE getpagesize()
+#define NODE_SIZE sizeof(node_t)
 
-void *_arena_start;
+void *arena_start = NULL;
 //the number of PAGE_SIZE pages allocated
 long numPages;
 //the total size of the allocation block. Will be a multiple of PAGE_SIZE
 long arenaSize;
+node_t *freeList;
 
 int init(size_t size) {
-    //size_t is unsigned, so check msb
     puts("Initializing arena:");
-    printf("...requested size %d bytes\n", size);
+    printf("...requested size %lu bytes\n", size);
 
     if (size >> 63 != 0) {
         return ERR_BAD_ARGUMENTS;
     }
-    if (size > MAX_ARENA_SIZE){
-        printf("...error: requested size larger than MAX_ARENA_SIZE (2147483647)")
+    if (size > MAX_ARENA_SIZE) {
+        printf("...error: requested size larger than MAX_ARENA_SIZE (2147483647)");
     }
+
     numPages = (long) ((size / (PAGE_SIZE + 1)) + 1);
     arenaSize = numPages * PAGE_SIZE;
 
-    int fd=open("/dev/zero",O_RDWR);
-    _arena_start = mmap(NULL, arenaSize, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
+    printf("...pagesize is %d bytes\n", PAGE_SIZE);
+    if (size % PAGE_SIZE != 0) {
+        printf("...adjusting size with page boundaries\n");
+    }
+
+    printf("...adjusted size is %ld bytes\n", arenaSize);
+    printf("...mapping arena with mmap()\n");
+
+    int fd = open("/dev/zero", O_RDWR);
+    arena_start = mmap(NULL, arenaSize, PROT_READ | PROT_WRITE, MAP_PRIVATE, fd, 0);
     close(fd);
 
-    printf("...pagesize is %d bytes\n", PAGE_SIZE);
-    printf("...adjusting size with page boundaries\n");
-    //this is an if statement if need to remap^^^
-    printf("...adjusted size is %d bytes\n", arenaSize);
-    printf("...mapping arena with mmap()\n");
-    printf("...arena starts at %p\n", _arena_start);
-    //void pointer arithmetic is non-standard, casting to char so that sizeof(ptr) returns 1 byte
-    printf("...arena ends at %p\n",(char *) _arena_start + arenaSize);
+    if (arena_start == MAP_FAILED) {
+        perror("map failed");
+        return ERR_SYSCALL_FAILED;
+    }
+
+    printf("...arena starts at %p\n", arena_start);
+    printf("...arena ends at %p\n", arena_start + arenaSize);
 
     puts("...initializing header for initial free chunk");
-    printf("...header size is %d bytes\n",32);
+
+    freeList = arena_start;
+    freeList->size = arenaSize - NODE_SIZE;
+    freeList->is_free = 1;
+    freeList->bwd = NULL;
+    freeList->fwd = NULL;
+
+    printf("...header size is %ld bytes\n", NODE_SIZE);
+    return arenaSize;
 }
 
-int destroy(){
+int destroy() {
+    if (arena_start == NULL) {
+        puts("...error: cannot destroy unintialized arena. Setting error status");
+        return ERR_UNINITIALIZED;
+    }
     puts("Destroying Arena:");
-    munmap(_arena_start,arenaSize);
     puts("...unmapping arena with munmap()");
-}
-
-int main() {
-    init(1);
+    if (munmap(arena_start, arenaSize) == -1) {
+        perror("munmap failed");
+        return ERR_SYSCALL_FAILED;
+    }
+    arena_start = NULL;
+    arenaSize = 0;
+    return 0;
 }
