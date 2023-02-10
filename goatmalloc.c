@@ -3,7 +3,6 @@
 #include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
-#include <assert.h>
 #include "goatmalloc.h"
 
 #define PAGE_SIZE getpagesize()
@@ -14,6 +13,7 @@ void *arena_start = NULL;
 long numPages;
 //the total size of the allocation block. Will be a multiple of PAGE_SIZE
 long arenaSize;
+int statusno;
 node_t *freeList;
 
 int init(size_t size) {
@@ -76,4 +76,25 @@ int destroy() {
     arena_start = NULL;
     arenaSize = 0;
     return 0;
+}
+
+void* walloc(size_t size) {
+    if (arena_start == NULL) {
+        puts("Error: Unitialized. Setting status code");
+        statusno = ERR_UNINITIALIZED;
+        return NULL;
+    }
+    puts("Allocating memory:");
+    printf("...looking for free chunk of >= %ld bytes\n", size);
+    node_t *curNode;
+    //will have to keep track of prev and size of new cur node
+    for (curNode = freeList; curNode != NULL; curNode = curNode->fwd) {
+        if (freeList->size < size) {
+            puts("...no such free chunk exists");
+            puts("...setting error code");
+            statusno = ERR_OUT_OF_MEMORY;
+            return NULL;
+        }
+    }
+    return NULL;
 }
