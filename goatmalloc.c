@@ -14,6 +14,7 @@ long numPages;
 //the total size of the allocation block. Will be a multiple of PAGE_SIZE
 long arenaSize;
 int statusno;
+//implicit, so every section is mapped, not just the free areas
 node_t *freeList;
 
 int init(size_t size) {
@@ -86,15 +87,65 @@ void* walloc(size_t size) {
     }
     puts("Allocating memory:");
     printf("...looking for free chunk of >= %ld bytes\n", size);
-    node_t *curNode;
-    //will have to keep track of prev and size of new cur node
-    for (curNode = freeList; curNode != NULL; curNode = curNode->fwd) {
-        if (freeList->size < size) {
-            puts("...no such free chunk exists");
-            puts("...setting error code");
-            statusno = ERR_OUT_OF_MEMORY;
-            return NULL;
+
+    node_t *curNode, *prev;
+    void *result;
+    size_t totalSize = size + NODE_SIZE;
+    prev = NULL;
+
+    for (curNode = freeList; curNode != NULL; prev = curNode, curNode = curNode->fwd) {
+        if(curNode->size >= size && curNode->is_free){
+            printf("...found free chunk of %ld bytes with header at %p\n", curNode->size,curNode);
+            printf("...free chunk->fwd currently points to %p\n", curNode->fwd);
+            printf("...free chunk->bwd currently points to %p\n", curNode->bwd);
+            short split = 0;
+            //block can accomodate us, so make node header and return header + 1 as void*.
+            //edge case ignored: if the resulting space is less than 32 bytes no header will be created. should call sbrk
+            puts("...checking if splitting is required");
+            if (arenaSize - totalSize >= NODE_SIZE){
+                split = 1;
+                node_t *tempNextNode = curNode->fwd;
+                curNode->fwd = (void*) (curNode + 1) + size;
+                //populate this new node
+                //taking free memory away from the current free block, along with the header size
+                curNode->fwd->size = curNode->size - size - NODE_SIZE;
+                curNode->fwd->is_free = 1;
+                curNode->fwd->fwd = tempNextNode;
+                curNode->fwd->bwd = curNode;
+            }
+            if(split){
+                puts("...splitting is required THIS IS NOT THE MESSAGE");
+            } else {
+                puts("...splitting not required");
+            }
+            printf("...updating chunk header at %p\n" , curNode);
+            puts("...being careful with my pointer arthimetic and void pointer casting");
+            result = curNode + 1;
+            curNode->size = size;
+            curNode->is_free = 0;
+            curNode->bwd = prev;
+            printf("Allocation starts at %p\n", result);
+            break;//if we dont break then cur node will = NULL, and prev will be
         }
     }
-    return NULL;
+    if (curNode == NULL) {
+        puts("...no such free chunk exists");
+        puts("...setting error code");
+        statusno = ERR_OUT_OF_MEMORY;
+        return NULL;
+    }
+    return result;
+}
+
+void wfree(void *ptr){
+    //seek to metadata
+    puts("Freeing allocated memory:");
+    printf("...supplied pointer %p:\n", ptr);
+    puts("...being careful with my pointer arthimetic and void pointer casting");
+    node_t *metadata = ptr - NODE_SIZE;
+    printf("accessing chunk header at %p", metadata);
+    printf("chunk size of %lu", metadata->size);
+    metadata->is_free = 1;
+    puts("...checking if coalescing is needed");
+    puts("...coalescing not needed.");
 }
