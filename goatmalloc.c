@@ -90,7 +90,6 @@ void *walloc(size_t size) {
 
     node_t *curNode, *prev;
     void *result;
-//    size_t totalSize = size + NODE_SIZE;
     prev = NULL;
 
     for (curNode = freeList; curNode != NULL; prev = curNode, curNode = curNode->fwd) {
@@ -144,27 +143,33 @@ void *walloc(size_t size) {
 }
 
 void wfree(void *ptr) {
-    //seek to metadata
+    //seek to header
     puts("Freeing allocated memory:");
     printf("...supplied pointer %p:\n", ptr);
     puts("...being careful with my pointer arthimetic and void pointer casting");
-    node_t *metadata = ptr - NODE_SIZE;
-    printf("accessing chunk header at %p", metadata);
-    printf("chunk size of %lu", metadata->size);
-    metadata->is_free = 1;
+    node_t *header = ptr - NODE_SIZE;
+    printf("accessing chunk header at %p", header);
+    printf("chunk size of %lu", header->size);
+    header->is_free = 1;
     puts("...checking if coalescing is needed");
     int coalesce = 0;
-    node_t *prevNode = metadata->bwd;
-    node_t *nextNode = metadata->fwd;
-    if (prevNode != NULL && prevNode->is_free) {
-        coalesce = 1;
-        prevNode->size += metadata->size + NODE_SIZE;
-        prevNode->fwd = nextNode;
-    }
+    node_t *prevNode = header->bwd;
+    node_t *nextNode = header->fwd;
     if (nextNode != NULL && nextNode->is_free) {
         coalesce = 1;
-        prevNode->size += metadata->size + NODE_SIZE;
-        prevNode->bwd = prevNode;
+        header->size += nextNode->size + NODE_SIZE;//size is getting added twice
+        header->fwd = nextNode->fwd;
+        if (nextNode->fwd != NULL){
+            nextNode->fwd->bwd = header;
+        }
+    }
+    if (prevNode != NULL && prevNode->is_free) {
+        coalesce = 1;//check
+        prevNode->size += header->size + NODE_SIZE;
+        prevNode->fwd = header->fwd;
+        if(header->fwd != NULL){
+            header->fwd->bwd = prevNode;
+        }
     }
     if (coalesce) {
         puts("...coalescing needed.");
@@ -172,17 +177,3 @@ void wfree(void *ptr) {
         puts("...coalescing not needed.");
     }
 }
-
-//int main() {
-//    init(PAGE_SIZE);
-//    void *buff1 = walloc(64);
-//
-//    int size = PAGE_SIZE - 64 - (sizeof(node_t) * 2) - 10;
-//    void *buff2 = walloc(size);
-//    node_t *header2 = (node_t *) (buff2 - sizeof(node_t));
-//
-//    printf("buff 1 size: %zu\n", header2->size);
-//    printf("buff 1 next: %p\n", header2->fwd);
-//    printf("buff 1 prev: %p\n", header2->bwd);
-//    printf("buff 1 is free: %d\n", header2->is_free);
-//}
