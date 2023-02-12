@@ -79,7 +79,7 @@ int destroy() {
     return 0;
 }
 
-void* walloc(size_t size) {
+void *walloc(size_t size) {
     if (arena_start == NULL) {
         puts("Error: Unitialized. Setting status code");
         statusno = ERR_UNINITIALIZED;
@@ -90,22 +90,25 @@ void* walloc(size_t size) {
 
     node_t *curNode, *prev;
     void *result;
-    size_t totalSize = size + NODE_SIZE;
+//    size_t totalSize = size + NODE_SIZE;
     prev = NULL;
 
     for (curNode = freeList; curNode != NULL; prev = curNode, curNode = curNode->fwd) {
-        if(curNode->size >= size && curNode->is_free){
-            printf("...found free chunk of %ld bytes with header at %p\n", curNode->size,curNode);
+        if (curNode->size >= size && curNode->is_free) {
+            printf("...found free chunk of %ld bytes with header at %p\n", curNode->size, curNode);
             printf("...free chunk->fwd currently points to %p\n", curNode->fwd);
             printf("...free chunk->bwd currently points to %p\n", curNode->bwd);
             short split = 0;
             //block can accomodate us, so make node header and return header + 1 as void*.
             //edge case ignored: if the resulting space is less than 32 bytes no header will be created. should call sbrk
             puts("...checking if splitting is required");
-            if (arenaSize - totalSize >= NODE_SIZE){
+            //if too big and we have space for node_size +1, we split
+            // must have at least one byte, otherwise useless. arenasize - (total)size >= nodesize+1
+            int leftOver = 0;
+            if (curNode->size > size && (leftOver = curNode->size - size) >= NODE_SIZE + 1) {
                 split = 1;
                 node_t *tempNextNode = curNode->fwd;
-                curNode->fwd = (void*) (curNode + 1) + size;
+                curNode->fwd = (void *) (curNode + 1) + size;
                 //populate this new node
                 //taking free memory away from the current free block, along with the header size
                 curNode->fwd->size = curNode->size - size - NODE_SIZE;
@@ -113,15 +116,18 @@ void* walloc(size_t size) {
                 curNode->fwd->fwd = tempNextNode;
                 curNode->fwd->bwd = curNode;
             }
-            if(split){
-                puts("...splitting is required THIS IS NOT THE MESSAGE");
+
+            if (split) {
+                puts("...splitting free chunk");
             } else {
                 puts("...splitting not required");
             }
-            printf("...updating chunk header at %p\n" , curNode);
+            printf("...updating chunk header at %p\n", curNode);
             puts("...being careful with my pointer arthimetic and void pointer casting");
             result = curNode + 1;
-            curNode->size = size;
+            if (leftOver > NODE_SIZE) { //if you have room for another block, add it, if not dont waste space
+                curNode->size = size;
+            }
             curNode->is_free = 0;
             curNode->bwd = prev;
             printf("Allocation starts at %p\n", result);
@@ -137,7 +143,7 @@ void* walloc(size_t size) {
     return result;
 }
 
-void wfree(void *ptr){
+void wfree(void *ptr) {
     //seek to metadata
     puts("Freeing allocated memory:");
     printf("...supplied pointer %p:\n", ptr);
@@ -147,5 +153,36 @@ void wfree(void *ptr){
     printf("chunk size of %lu", metadata->size);
     metadata->is_free = 1;
     puts("...checking if coalescing is needed");
-    puts("...coalescing not needed.");
+    int coalesce = 0;
+    node_t *prevNode = metadata->bwd;
+    node_t *nextNode = metadata->fwd;
+    if (prevNode != NULL && prevNode->is_free) {
+        coalesce = 1;
+        prevNode->size += metadata->size + NODE_SIZE;
+        prevNode->fwd = nextNode;
+    }
+    if (nextNode != NULL && nextNode->is_free) {
+        coalesce = 1;
+        prevNode->size += metadata->size + NODE_SIZE;
+        prevNode->bwd = prevNode;
+    }
+    if (coalesce) {
+        puts("...coalescing needed.");
+    } else {
+        puts("...coalescing not needed.");
+    }
 }
+
+//int main() {
+//    init(PAGE_SIZE);
+//    void *buff1 = walloc(64);
+//
+//    int size = PAGE_SIZE - 64 - (sizeof(node_t) * 2) - 10;
+//    void *buff2 = walloc(size);
+//    node_t *header2 = (node_t *) (buff2 - sizeof(node_t));
+//
+//    printf("buff 1 size: %zu\n", header2->size);
+//    printf("buff 1 next: %p\n", header2->fwd);
+//    printf("buff 1 prev: %p\n", header2->bwd);
+//    printf("buff 1 is free: %d\n", header2->is_free);
+//}
